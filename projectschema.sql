@@ -39,15 +39,16 @@ CREATE TABLE provider(
 CREATE TABLE patient(
     id char(36) PRIMARY KEY,
     ssn char(12) UNIQUE,
-    address_id char(36),
+    location_id char(36),
     primary_care_provider char(20),
     FOREIGN KEY(primary_care_provider) REFERENCES provider(npi),
-    FOREIGN KEY(address_id) REFERENCES location(id)
+    FOREIGN KEY(location_id) REFERENCES location(id)
 );
 
 CREATE TABLE data(
     id char(36) PRIMARY KEY,
     time timestamp,
+    record varchar(100),
     patient_id char(36),
     service_id char(36),
     FOREIGN KEY(patient_id) REFERENCES patient(id),

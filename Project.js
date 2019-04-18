@@ -18,7 +18,7 @@ let first = (x)=>x[0]
 let maybefirst=(x)=>(x.length > 0)?x[0]:"undefined";
 //Only One
 function only(x) {
-	if (x.length != 1) {
+	if (x.length == 1) {
 		return x[0]
 	}
 	else {
@@ -82,8 +82,8 @@ function writeQuerySuccessToStreamAndClose(response, query) {
 }
 
 //Runs query and writes the result to the response.
-//Optionally you may provide a pre-processing method. By default "id" is used. Suggestions include "only", and "first"
-function writeQueryResultToStreamAndClose (response, query, queryresultPreprocess = id) {
+//Optionally you may provide a pre-processing method. By default "maybefirst" is used. Suggestions include "id", "only", and "first"
+function writeQueryResultToStreamAndClose (response, query, queryresultPreprocess = maybefirst) {
 	connectAndQuery(query, response, (queryresult)=>writeObjectToStreamAndClose(response, 200, queryresultPreprocess(queryresult)));
 }
 
@@ -127,31 +127,77 @@ let requesthandlers = {
 		`
 		writeQueryResultToStreamAndClose(response, query, maybefirst);
 	},
-	//TODO: Pick Option A or B for cleaning
 	"removeservice" : function(response, _, service_id) {
-		let query = `DELETE FROM service WHERE id = "${service_id}"`
-		writeQuerySuccessToStreamAndClose(response, query);
+		writeQuerySuccessToStreamAndClose(response, `DELETE FROM service WHERE id = "${service_id}"`);
 	},
 	//Provider API
-	"listlocations" : function(response) {
-		let query = "SELECT id, address FROM location;";
-		writeQueryResultToStreamAndClose(response, query);
+	"addprovider" : function(response, postPayload) {
+		writeQuerySuccessToStreamAndClose(response, `INSERT INTO provider VALUES("${postPayload.npi}", "${postPayload.department_id});"`);
 	},
-	"getlocation" : function(response, _, urlparam) {
-		let query = `SELECT address, lid FROM location WHERE address = ${urlparam};`;
-		writeQueryResultToStreamAndClose(response, query);
+	"getprovider" : function(response, _, npi) {
+		writeQueryResultToStreamAndClose(response, `SELECT department_id, npi FROM provider WHERE npi = "${npi}";`);
 	},
-	"addlocation" : function(response, postPayload) {
-		if (postPayload["address"]) {
-			let query = `
-				INSERT INTO location (id, address) VALUES (UUID(), "${postPayload.address}");
-				SELECT address, id FROM project WHERE address = ${postPayload.address});
-			`;
-			writeQuerySuccessToStreamAndClose(response, query);
-		}
-		else {
-			malformedRequestResponse(response, 'JSON field required: address (string)');
-		}
+	"removeprovider" : function(response, _, npi) {
+		writeQuerySuccessToStreamAndClose(response, `DELETE FROM proivder WHERE npi = "${npi}";`)
+	},
+	//Patient API
+	"addpatient" : function(response, postPayload) {
+		writeQuerySuccessToStreamAndClose(response, `
+			INSERT IGNORE INTO location VALUES (UUID(), ${postPayload.address});
+			INSERT INTO patient VALUES(
+				"${postPayload.pid}",
+				"${postPayload.ssn}",
+				(SELECT address FROM location WHERE address = "${postPayload.address}"),
+				"${postPayload.provider_id}"
+			);
+		`)
+	},
+	"getpatient" : function(response, _, pid) {
+		writeQueryResultToStreamAndClose(response, `
+			SELECT id as pid, ssn, primary_care_provider as provider_id FROM patient P WHERE id = "${pid}"
+			INNER JOIN location L ON L.id = P.location_id;`
+		);
+	},
+	"removepatient" : function(response, _, pid) {
+		writeQuerySuccessToStreamAndClose(response,
+			`DELETE FROM patient WHERE id="${pid}";`
+		);
+	},
+	//Patient Record API
+	"adddata" : function(response, postPayload) {
+		writeQuerySuccessToStreamAndClose(
+			response,
+			`INSERT INTO data VALUES(
+				"${postPayload.id}",
+				"${postPayload.ts}",
+				"${postPayload.data}",
+				"${postPayload.patient_id}",
+				"${postPayload.service_id}"
+			);`
+		);
+	},
+	"getdata" : function(response, _, id) {
+		writeQueryResultToStreamAndClose(response, 
+			`SELECT id, patient_id, service_id, time as ts, record as data
+			FROM data
+			WHERE id = "${id}"
+		`);
+	},
+	//Option B removal api's
+	"removedepartment"  : function(response, _, id) {
+		writeQuerySuccessToStreamAndClose(response,
+			`DELETE FROM department WHERE id = "${id}";`
+		);
+	},
+	"removeinstitution" : function(response, _, taxid) {
+		writeQuerySuccessToStreamAndClose(response,
+			`DELETE FROM institution WHERE tax_id = "${taxid}";`
+		)
+	},
+	"removeaddress" : function(response, _, address) {
+		writeQuerySuccessToStreamAndClose(response,
+			`DELETE FROM location WHERE address = "${decodeURI(address)};"`
+		);
 	}
 }
 
