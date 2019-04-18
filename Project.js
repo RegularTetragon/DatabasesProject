@@ -5,7 +5,7 @@ const API_PATTERN = /\/api\/([^\/\s]+)(?:\/([^\/\s]*))?/
 const SQL_NONENCODING = /[\t]|#.*\n/g
 let http = require("http")
 let mysql = require("mysql")
-const VERBOSE = false
+const VERBOSE = true
 
 
 
@@ -21,8 +21,11 @@ function only(x) {
 	if (x.length == 1) {
 		return x[0]
 	}
-	else {
+	else if (x.length > 1) {
 		throw "More than one result in array"
+	}
+	else {
+		throw "No results";
 	}
 }
 
@@ -115,7 +118,7 @@ let requesthandlers = {
 	},
 	"getservice" : function(response, _, service_id) {
 		let query = `
-		SELECT
+		SELECT    
 			S.department_id,
 			S.id AS service_id,
 			I.tax_id,
@@ -132,30 +135,32 @@ let requesthandlers = {
 	},
 	//Provider API
 	"addprovider" : function(response, postPayload) {
-		writeQuerySuccessToStreamAndClose(response, `INSERT INTO provider VALUES("${postPayload.npi}", "${postPayload.department_id});"`);
+		writeQuerySuccessToStreamAndClose(response, `INSERT INTO provider VALUES("${postPayload.npi}", "${postPayload.department_id}");`);
 	},
 	"getprovider" : function(response, _, npi) {
 		writeQueryResultToStreamAndClose(response, `SELECT department_id, npi FROM provider WHERE npi = "${npi}";`);
 	},
 	"removeprovider" : function(response, _, npi) {
-		writeQuerySuccessToStreamAndClose(response, `DELETE FROM proivder WHERE npi = "${npi}";`)
+		writeQuerySuccessToStreamAndClose(response, `DELETE FROM provider WHERE npi = "${npi}";`)
 	},
 	//Patient API
 	"addpatient" : function(response, postPayload) {
 		writeQuerySuccessToStreamAndClose(response, `
-			INSERT IGNORE INTO location VALUES (UUID(), ${postPayload.address});
+			INSERT IGNORE INTO location VALUES (UUID(), "${postPayload.address}");
 			INSERT INTO patient VALUES(
 				"${postPayload.pid}",
 				"${postPayload.ssn}",
-				(SELECT address FROM location WHERE address = "${postPayload.address}"),
+				(SELECT id FROM location WHERE address = "${postPayload.address}"),
 				"${postPayload.provider_id}"
 			);
 		`)
 	},
 	"getpatient" : function(response, _, pid) {
 		writeQueryResultToStreamAndClose(response, `
-			SELECT id as pid, ssn, primary_care_provider as provider_id FROM patient P WHERE id = "${pid}"
-			INNER JOIN location L ON L.id = P.location_id;`
+		SELECT P.id as pid, P.ssn, P.primary_care_provider as provider_id, L.address
+	  		FROM patient P
+			INNER JOIN location L ON L.id = P.location_id
+	  		WHERE P.id = "${pid}";`
 		);
 	},
 	"removepatient" : function(response, _, pid) {
@@ -196,7 +201,8 @@ let requesthandlers = {
 	},
 	"removeaddress" : function(response, _, address) {
 		writeQuerySuccessToStreamAndClose(response,
-			`DELETE FROM location WHERE address = "${decodeURI(address)};"`
+			
+			`DELETE FROM location WHERE address = "${address};"`
 		);
 	}
 }
@@ -231,7 +237,7 @@ function handleRequest(path, response, postPayloadString, urlparam) {
 		}
 	}
 	if (!postPayloadString || postPayload) {
-		requesthandlers[path](response, postPayload, urlparam);
+		requesthandlers[path](response, postPayload, urlparam && decodeURI(urlparam) || undefined);
 	}
 }
 
